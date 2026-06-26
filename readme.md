@@ -50,7 +50,7 @@ You'll get an interactive menu:
 | `n` | Add a new client |
 | `d` | Delete a client |
 | `w` | Write AWG `.conf` files (server + clients) |
-| `s` | Sync changes to the live interface (regenerates `.conf`, then `awg setconf`) |
+| `s` | Sync changes to the live interface (`awg setconf`) |
 | `q` | Exit |
 
 ## Typical workflow
