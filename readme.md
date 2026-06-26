@@ -63,9 +63,9 @@ You'll get an interactive menu:
 
 ## How sync works
 
-The `s` command first regenerates the server `.conf` from the YAML, then runs `awg-quick strip <iface>` and pipes the result into `awg setconf <iface>`. This brings the kernel state in line with the file: new peers are added, removed peers disappear, and changed keys are updated — all in one shot, while obfuscation parameters and existing handshakes for unchanged peers are preserved.
+The `s` command runs `awg-quick strip <iface>` and pipes the result into `awg setconf <iface>`. This brings the kernel state in line with the file: new peers are added, removed peers disappear, and changed keys are updated — all in one shot, while obfuscation parameters and existing handshakes for unchanged peers are preserved.
 
-> **Note:** `awg setconf` only changes the in-kernel state. The `.conf` file on disk is what survives a reboot, which is why `s` regenerates it first. After a server reboot the interface comes back up from the `.conf`.
+> **Note:** `awg setconf` only changes the in-kernel state. The `.conf` file on disk is what survives a reboot, which is why you should run `w` before `s`. After a server reboot the interface comes back up from the `.conf`.
 
 ## Notes & caveats
 

@@ -204,7 +204,6 @@ def generate_awg_config(data):
 def sync_awg_config(data):
     """Apply the current config to the live AWG interface without restart."""
     iface = data["server"]["AWGInterface"]
-    config_path = data["server"]["Config"]
 
     # setconf reads a stripped config (kernel-relevant fields only)
     try:
@@ -347,7 +346,6 @@ def main():
             write_config(CONFIG_YAML, config)
         elif choice == "w":
             generate_awg_config(config)
-            write_config(CONFIG_YAML, config)
         elif choice == "s":
             sync_awg_config(config)
         elif choice == "q":
