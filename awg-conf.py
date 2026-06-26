@@ -17,6 +17,13 @@ CONFIG_YAML = "wg-conf-config-awg1.yaml"
 # Key / jitter generation
 # ---------------------------------------------------------------------------
 
+_BOOL_TO_STR = {True: "on", False: "off"}
+
+def format_value(value):
+    if isinstance(value, bool):
+        return _BOOL_TO_STR[value]
+    return value
+
 def generate_wireguard_keypair():
     """Generate an X25519 keypair and return (private_key_b64, public_key_b64)."""
     try:
@@ -161,7 +168,7 @@ def generate_awg_config(data):
             f.write("[Interface]\n")
             for param, value in server.items():
                 if param not in _SERVER_ONLY_PARAMS:
-                    f.write(f"{param} = {value}\n")
+                    f.write(f"{param} = {format_value(value)}\n")
 
             for peer_name, peer_data in clients.items():
                 f.write(f"\n[Peer] #{peer_name}\n")
@@ -181,7 +188,7 @@ def generate_awg_config(data):
                 f.write("[Interface]\n")
                 for param, value in client_data.items():
                     if param != "PublicKey":
-                        f.write(f"{param} = {value}\n")
+                        f.write(f"{param} = {format_value(value)}\n")
                 for param in _OBFS_PARAMS:
                     if param in server:
                         f.write(f"{param} = {server[param]}\n")
