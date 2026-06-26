@@ -8,7 +8,7 @@ import os
 import random
 import re
 import sys
-
+import subprocess
 import yaml
 
 CONFIG_YAML = "wg-conf-config-awg1.yaml"
@@ -89,7 +89,7 @@ def read_config(file):
     if server is None:
         sys.exit(f"'server' block missing or empty in {file}")
 
-    required_keys = ("Config", "Address", "ListenPort", "ClientEndpoint")
+    required_keys = ("Config", "Address", "ListenPort", "ClientEndpoint", "AWGInterface")
     for key in required_keys:
         if server.get(key) is None:
             sys.exit(f"'{key}' missing or empty in server block of {file}")
@@ -142,7 +142,7 @@ def write_config(file, data):
 # ---------------------------------------------------------------------------
 
 # Params written to [Interface] on the server side that clients don't need
-_SERVER_ONLY_PARAMS = {"Config", "PublicKey", "ClientEndpoint"}
+_SERVER_ONLY_PARAMS = {"Config", "PublicKey", "ClientEndpoint", "AWGInterface"}
 
 # Obfuscation params shared between server and client configs
 _OBFS_PARAMS = {"S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"}
@@ -200,6 +200,37 @@ def generate_awg_config(data):
             print(f"Client config written: {file_path}")
         except Exception as e:
             sys.exit(e)
+
+def sync_awg_config(data):
+    """Apply the current config to the live AWG interface without restart."""
+    iface = data["server"]["AWGInterface"]
+    config_path = data["server"]["Config"]
+
+    # setconf reads a stripped config (kernel-relevant fields only)
+    try:
+        stripped = subprocess.run(
+            ["awg-quick", "strip", iface],
+            check=True, capture_output=True, text=True,
+        ).stdout
+    except FileNotFoundError:
+        print("Warning: 'awg-quick' not found — is AmneziaWG installed?")
+        return
+    except subprocess.CalledProcessError as e:
+        print(f"Could not strip config: {e.stderr.strip()}")
+        return
+
+    try:
+        subprocess.run(
+            ["awg", "setconf", iface, "/dev/stdin"],
+            input=stripped, check=True, capture_output=True, text=True,
+        )
+        print(f"Interface {iface} synced")
+    except FileNotFoundError:
+        print("Warning: 'awg' not found — is AmneziaWG installed?")
+    except subprocess.CalledProcessError as e:
+        print(f"Could not sync (interface down?): {e.stderr.strip()}")
+
+
 
 # ---------------------------------------------------------------------------
 # Client management
@@ -294,6 +325,7 @@ def main_menu():
     print("  n) Add new client")
     print("  d) Delete client")
     print("  w) Write AWG configs")
+    print("  s) Sync changes with AWG")
     print("  q) Exit")
     print("─" * 51)
 
@@ -316,6 +348,8 @@ def main():
         elif choice == "w":
             generate_awg_config(config)
             write_config(CONFIG_YAML, config)
+        elif choice == "s":
+            sync_awg_config(config)
         elif choice == "q":
             break
         else:
