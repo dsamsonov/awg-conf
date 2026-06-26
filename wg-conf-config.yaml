@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# wg-conf-config.yaml — example / пример
+#
+# Copy this to wg-conf-config.yaml and edit the required fields.
+# Скопируйте в wg-conf-config.yaml и отредактируйте обязательные поля.
+#
+# On first run the script fills in PrivateKey/PublicKey, S1–S4 and H1–H4
+# automatically. The clients block is managed via the menu (n / d).
+# При первом запуске скрипт сам заполнит PrivateKey/PublicKey, S1–S4 и H1–H4.
+# Блок clients управляется через меню (n / d).
+# ---------------------------------------------------------------------------
+
+server:
+  # === Required / Обязательные ===
+
+  # Path where the server .conf will be written.
+  # Путь, куда будет записан серверный .conf.
+  Config: /etc/amnezia/amneziawg/awg1.conf
+
+  # Live interface name — used by the sync command (awg setconf).
+  # Имя живого интерфейса — используется командой синхронизации (awg setconf).
+  AWGInterface: awg1
+
+  # Server address with subnet. Client IPs are allocated from this subnet.
+  # Адрес сервера с подсетью. IP клиентов выдаются из этой подсети.
+  Address: 192.168.254.1/24
+
+  # UDP port the server listens on.
+  # UDP-порт, который слушает сервер.
+  ListenPort: 47500
+
+  # host:port that clients will connect to (your public address).
+  # host:port, к которому подключаются клиенты (ваш публичный адрес).
+  ClientEndpoint: vpn.example.com:47500
+
+  # === Optional extra [Interface] params / Доп. параметры [Interface] ===
+  # Add any standard wg-quick params here; they go straight into the .conf.
+  # Добавьте любые стандартные параметры wg-quick; они попадут прямо в .conf.
+
+  # Table: off
+  # MTU: 1420
+  # PostUp: iptables -A FORWARD -i awg1 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  # PostDown: iptables -D FORWARD -i awg1 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+# clients:        # managed by the script — leave empty or omit on first run
+#                 # управляется скриптом — оставьте пустым или уберите при первом запуске

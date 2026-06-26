@@ -1,0 +1,210 @@
+# awg-conf
+
+A small interactive CLI for managing AmneziaWG (AWG) server and client configurations from a single YAML file. Generates keys, allocates client IPs automatically, writes `.conf` files, and applies changes to a live interface without restarting the tunnel.
+
+🇷🇺 Russian version: [README.rus.md](README.rus.md)
+
+---
+
+## Features
+
+- Single YAML file as the source of truth for server and all clients.
+- Automatic X25519 keypair generation (server and clients).
+- Automatic generation of AmneziaWG obfuscation parameters (`S1`–`S4`, `H1`–`H4`) for the server and jitter parameters (`Jc`, `Jmin`, `Jmax`) for each client.
+- Automatic free-IP allocation from the server subnet.
+- Generates the server `.conf` and one `.conf` per client.
+- Applies add/delete/key changes to a running interface via `awg setconf` — no tunnel restart, existing connections survive.
+- Supports arbitrary extra `[Interface]` parameters (e.g. `Table = off`, `MTU`, `PreUp`, `PostDown`).
+
+## Requirements
+
+- Python 3.6+
+- `pyyaml` and `cryptography`:
+  ```bash
+  pip install pyyaml cryptography
+  ```
+- AmneziaWG tools installed (`awg`, `awg-quick`) — only needed for the **sync** command.
+
+## Installation
+
+```bash
+git clone https://github.com/dsamsonov/awg-conf.git
+cd awg-conf
+chmod +x wg-conf.py
+```
+
+## Usage
+
+Create a `wg-conf-config.yaml` next to the script (see [Example config](#example-config)), then run:
+
+```bash
+./wg-conf.py
+```
+
+You'll get an interactive menu:
+
+| Key | Action |
+|-----|--------|
+| `m` | Print the menu |
+| `l` | List clients (name, address, public key) |
+| `n` | Add a new client |
+| `d` | Delete a client |
+| `w` | Write AWG `.conf` files (server + clients) |
+| `s` | Sync changes to the live interface (regenerates `.conf`, then `awg setconf`) |
+| `q` | Exit |
+
+## Typical workflow
+
+1. Run the script. On first launch it fills in any missing server keys and obfuscation parameters and saves them back to the YAML.
+2. Press `n` to add clients (keys, IP, and jitter are generated automatically).
+3. Press `w` to write the `.conf` files for the server and each client.
+4. Hand the generated `<name>-client.conf` files to your users.
+5. Press `s` to apply everything to the running interface without a restart.
+
+## How sync works
+
+The `s` command first regenerates the server `.conf` from the YAML, then runs `awg-quick strip <iface>` and pipes the result into `awg setconf <iface>`. This brings the kernel state in line with the file: new peers are added, removed peers disappear, and changed keys are updated — all in one shot, while obfuscation parameters and existing handshakes for unchanged peers are preserved.
+
+> **Note:** `awg setconf` only changes the in-kernel state. The `.conf` file on disk is what survives a reboot, which is why `s` regenerates it first. After a server reboot the interface comes back up from the `.conf`.
+
+## Notes & caveats
+
+- The interface name is read from the **`AWGInterface`** field in the YAML — it is not derived from the config filename.
+- YAML parses bare `off`/`on`/`yes`/`no` as booleans. The script converts booleans back to `on`/`off` when writing `.conf` files, so `Table: off` is written correctly as `Table = off`.
+- `Jc`, `Jmin`, `Jmax` are client-only parameters and appear only in client configs.
+- When overwriting an existing client, a new keypair is generated; run `s` afterwards to push the change to the interface.
+
+## Example config
+
+Minimal `wg-conf-config.yaml`. Only the `server` block with the required fields is mandatory — everything else (keys, obfuscation params, clients) is filled in by the script.
+
+### Minimal — before first run
+
+```yaml
+server:
+  Config: /etc/amnezia/amneziawg/awg1.conf   # path where the server .conf is written
+  AWGInterface: awg1                          # live interface name (used by sync)
+  Address: 192.168.254.1/24                   # server address + subnet for client IPs
+  ListenPort: 47500                           # UDP port the server listens on
+  ClientEndpoint: vpn.example.com:47500       # endpoint clients connect to
+```
+
+### Required fields
+
+| Field | Description |
+|-------|-------------|
+| `Config` | Path where the server `.conf` is written |
+| `AWGInterface` | Live interface name, used by `awg setconf` |
+| `Address` | Server address with subnet mask (CIDR) |
+| `ListenPort` | UDP port the server listens on |
+| `ClientEndpoint` | `host:port` clients connect to |
+
+### Full — after the script has populated it
+
+```yaml
+server:
+  # --- required, set by you ---
+  Config: /etc/amnezia/amneziawg/awg1.conf
+  AWGInterface: awg1
+  Address: 192.168.254.1/24
+  ListenPort: 48951
+  ClientEndpoint: vpn.example.com:47500
+
+  # --- optional extra [Interface] params you can add yourself ---
+  Table: off          # written to .conf as "Table = off"
+  MTU: 1420
+  PostUp: iptables -A FORWARD -i awg1 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  PostDown: iptables -D FORWARD -i awg1 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+  # --- generated by the script ---
+  PrivateKey: a9jaseyEtbrLw7eJxIm63FSOuFMInbpnq2xaRYWsPlg=
+  PublicKey: F5Z+uQ31k5HPfgWpHzye/lUTDEk7jBEqn+2Sa/OWDSk=
+  S1: 28
+  S2: 112
+  S3: 14
+  S4: 6
+  H1: 1294018306
+  H2: 1233432895
+  H3: 1834519855
+  H4: 504847222
+
+clients:
+  denis-phone:
+    PrivateKey: gI6EdUSYvn8ugXOt8QQD6Yc+JyiZxIhp3GInSWRfWGE=
+    PublicKey: ZH5jUqBaEitjK4UZy6APMnYPMsJhyhE/mu9rKB1uBkI=
+    Address: 192.168.254.242/32
+    Jc: 7
+    Jmin: 384
+    Jmax: 980
+  olya-laptop:
+    PrivateKey: WAUjVrEuVQjZ0rEdc1QQDhMfRYz0hLKnZ3Hh4hPp1Eo=
+    PublicKey: bGwQRgFqYbE9qPiA2RwUuG4kYhf3HEq5mu9rKB1uBkI=
+    Address: 192.168.254.243/32
+    Jc: 5
+    Jmin: 128
+    Jmax: 1024
+```
+
+### Resulting server `.conf`
+
+```ini
+[Interface]
+Address = 192.168.254.1/24
+ListenPort = 47500
+Table = off
+MTU = 1420
+PostUp = iptables -A FORWARD -i awg1 -j ACCEPT; ...
+PostDown = iptables -D FORWARD -i awg1 -j ACCEPT; ...
+PrivateKey = a9jaseyEtbrLw7eJxIm63FSOuFMInbpnq2xaRYWsPlg=
+S1 = 28
+S2 = 112
+S3 = 14
+S4 = 6
+H1 = 1294018306
+H2 = 1233432895
+H3 = 1834519855
+H4 = 504847222
+
+[Peer] #denis-phone
+PublicKey = ZH5jUqBaEitjK4UZy6APMnYPMsJhyhE/mu9rKB1uBkI=
+AllowedIPs = 192.168.254.242/32
+PersistentKeepalive = 30
+
+[Peer] #olya-laptop
+PublicKey = bGwQRgFqYbE9qPiA2RwUuG4kYhf3HEq5mu9rKB1uBkI=
+AllowedIPs = 192.168.254.243/32
+PersistentKeepalive = 30
+```
+
+### Resulting client `.conf` (e.g. `denis-phone-client.conf`)
+
+```ini
+[Interface]
+PrivateKey = gI6EdUSYvn8ugXOt8QQD6Yc+JyiZxIhp3GInSWRfWGE=
+Address = 192.168.254.242/32
+Jc = 7
+Jmin = 384
+Jmax = 980
+S1 = 28
+S2 = 112
+S3 = 14
+S4 = 6
+H1 = 1294018306
+H2 = 1233432895
+H3 = 1834519855
+H4 = 504847222
+
+[Peer]
+PublicKey = F5Z+uQ31k5HPfgWpHzye/lUTDEk7jBEqn+2Sa/OWDSk=
+Endpoint = vpn.example.com:47500
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 30
+```
+
+## Security
+
+The YAML file and generated `.conf` files contain **private keys**. Keep them readable only by root: `chmod 600`.
+
+## License
+
+See the `LICENSE` file in the repository.

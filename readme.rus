@@ -1,0 +1,210 @@
+# awg-conf
+
+Небольшая интерактивная CLI-утилита для управления конфигурацией сервера и клиентов AmneziaWG (AWG) из одного YAML-файла. Генерирует ключи, автоматически выдаёт IP клиентам, пишет `.conf`-файлы и применяет изменения на живом интерфейсе без перезапуска тоннеля.
+
+🇬🇧 English version: [README.md](README.md)
+
+---
+
+## Возможности
+
+- Один YAML-файл — единый источник истины для сервера и всех клиентов.
+- Автоматическая генерация ключевой пары X25519 (сервер и клиенты).
+- Автоматическая генерация параметров обфускации AmneziaWG (`S1`–`S4`, `H1`–`H4`) для сервера и jitter-параметров (`Jc`, `Jmin`, `Jmax`) для каждого клиента.
+- Автоматическая выдача свободного IP из подсети сервера.
+- Генерация серверного `.conf` и отдельного `.conf` для каждого клиента.
+- Применение добавления/удаления/смены ключей на работающем интерфейсе через `awg setconf` — без перезапуска тоннеля, существующие соединения не рвутся.
+- Поддержка произвольных дополнительных параметров `[Interface]` (например, `Table = off`, `MTU`, `PreUp`, `PostDown`).
+
+## Требования
+
+- Python 3.6+
+- `pyyaml` и `cryptography`:
+  ```bash
+  pip install pyyaml cryptography
+  ```
+- Установленные инструменты AmneziaWG (`awg`, `awg-quick`) — нужны только для команды **синхронизации**.
+
+## Установка
+
+```bash
+git clone https://github.com/dsamsonov/awg-conf.git
+cd awg-conf
+chmod +x wg-conf.py
+```
+
+## Использование
+
+Создайте рядом со скриптом файл `wg-conf-config.yaml` (см. [Пример конфига](#пример-конфига)) и запустите:
+
+```bash
+./wg-conf.py
+```
+
+Появится интерактивное меню:
+
+| Клавиша | Действие |
+|---------|----------|
+| `m` | Показать меню |
+| `l` | Список клиентов (имя, адрес, публичный ключ) |
+| `n` | Добавить нового клиента |
+| `d` | Удалить клиента |
+| `w` | Записать `.conf`-файлы AWG (сервер + клиенты) |
+| `s` | Синхронизировать изменения с живым интерфейсом (`awg setconf`) |
+| `q` | Выход |
+
+## Типовой сценарий
+
+1. Запустите скрипт. При первом запуске он заполнит недостающие ключи сервера и параметры обфускации и сохранит их обратно в YAML.
+2. Нажмите `n`, чтобы добавить клиентов (ключи, IP и jitter генерируются автоматически).
+3. Нажмите `w`, чтобы записать `.conf`-файлы сервера и каждого клиента.
+4. Передайте сгенерированные файлы `<имя>-client.conf` своим пользователям.
+5. Нажмите `s`, чтобы применить всё к работающему интерфейсу без перезапуска.
+
+## Как работает синхронизация
+
+Команда `s` сначала перегенерирует серверный `.conf` из YAML, затем выполняет `awg-quick strip <iface>` и передаёт результат в `awg setconf <iface>`. Это приводит состояние ядра в соответствие с файлом: новые пиры добавляются, удалённые исчезают, изменённые ключи обновляются — всё за один проход, при этом параметры обфускации и активные хендшейки неизменившихся пиров сохраняются.
+
+> **Примечание:** `awg setconf` меняет только состояние в ядре. Переживает перезагрузку именно `.conf`-файл на диске — поэтому `s` сначала его перегенерирует. После перезагрузки сервера интерфейс поднимается из `.conf`.
+
+## Замечания и нюансы
+
+- Имя интерфейса берётся из поля **`AWGInterface`** в YAML — оно не выводится из имени файла конфигурации.
+- YAML интерпретирует «голые» `off`/`on`/`yes`/`no` как булевы значения. Скрипт конвертирует булевы обратно в `on`/`off` при записи `.conf`, поэтому `Table: off` корректно пишется как `Table = off`.
+- `Jc`, `Jmin`, `Jmax` — параметры только для клиента и присутствуют лишь в клиентских конфигах.
+- При перезаписи существующего клиента генерируется новая ключевая пара; после этого выполните `s`, чтобы применить изменение на интерфейсе.
+
+## Пример конфига
+
+Минимальный `wg-conf-config.yaml`. Обязателен только блок `server` с необходимыми полями — всё остальное (ключи, параметры обфускации, клиенты) заполняется скриптом.
+
+### Минимальный — до первого запуска
+
+```yaml
+server:
+  Config: /etc/amnezia/amneziawg/awg1.conf   # путь, куда пишется серверный .conf
+  AWGInterface: awg1                          # имя живого интерфейса (для синхронизации)
+  Address: 192.168.254.1/24                   # адрес сервера + подсеть для IP клиентов
+  ListenPort: 47500                           # UDP-порт, который слушает сервер
+  ClientEndpoint: vpn.example.com:48951       # endpoint, к которому подключаются клиенты
+```
+
+### Обязательные поля
+
+| Поле | Описание |
+|------|----------|
+| `Config` | Путь, куда пишется серверный `.conf` |
+| `AWGInterface` | Имя живого интерфейса для `awg setconf` |
+| `Address` | Адрес сервера с маской подсети (CIDR) |
+| `ListenPort` | UDP-порт, который слушает сервер |
+| `ClientEndpoint` | `host:port`, к которому подключаются клиенты |
+
+### Полный — после заполнения скриптом
+
+```yaml
+server:
+  # --- обязательные, задаёте вы ---
+  Config: /etc/amnezia/amneziawg/awg1.conf
+  AWGInterface: awg1
+  Address: 192.168.254.1/24
+  ListenPort: 47500
+  ClientEndpoint: vpn.example.com:48951
+
+  # --- опциональные доп. параметры [Interface], можно добавить вручную ---
+  Table: off          # пишется в .conf как "Table = off"
+  MTU: 1420
+  PostUp: iptables -A FORWARD -i awg1 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  PostDown: iptables -D FORWARD -i awg1 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+  # --- генерируется скриптом ---
+  PrivateKey: a9jaseyEtbrLw7eJxIm63FSOuFMInbpnq2xaRYWsPlg=
+  PublicKey: F5Z+uQ31k5HPfgWpHzye/lUTDEk7jBEqn+2Sa/OWDSk=
+  S1: 28
+  S2: 112
+  S3: 14
+  S4: 6
+  H1: 1294018306
+  H2: 1233432895
+  H3: 1834519855
+  H4: 504847222
+
+clients:
+  denis-phone:
+    PrivateKey: gI6EdUSYvn8ugXOt8QQD6Yc+JyiZxIhp3GInSWRfWGE=
+    PublicKey: ZH5jUqBaEitjK4UZy6APMnYPMsJhyhE/mu9rKB1uBkI=
+    Address: 192.168.254.242/32
+    Jc: 7
+    Jmin: 384
+    Jmax: 980
+  olya-laptop:
+    PrivateKey: WAUjVrEuVQjZ0rEdc1QQDhMfRYz0hLKnZ3Hh4hPp1Eo=
+    PublicKey: bGwQRgFqYbE9qPiA2RwUuG4kYhf3HEq5mu9rKB1uBkI=
+    Address: 192.168.254.243/32
+    Jc: 5
+    Jmin: 128
+    Jmax: 1024
+```
+
+### Получаемый серверный `.conf`
+
+```ini
+[Interface]
+Address = 192.168.254.1/24
+ListenPort = 47500
+Table = off
+MTU = 1420
+PostUp = iptables -A FORWARD -i awg1 -j ACCEPT; ...
+PostDown = iptables -D FORWARD -i awg1 -j ACCEPT; ...
+PrivateKey = a9jaseyEtbrLw7eJxIm63FSOuFMInbpnq2xaRYWsPlg=
+S1 = 28
+S2 = 112
+S3 = 14
+S4 = 6
+H1 = 1294018306
+H2 = 1233432895
+H3 = 1834519855
+H4 = 504847222
+
+[Peer] #denis-phone
+PublicKey = ZH5jUqBaEitjK4UZy6APMnYPMsJhyhE/mu9rKB1uBkI=
+AllowedIPs = 192.168.254.242/32
+PersistentKeepalive = 30
+
+[Peer] #olya-laptop
+PublicKey = bGwQRgFqYbE9qPiA2RwUuG4kYhf3HEq5mu9rKB1uBkI=
+AllowedIPs = 192.168.254.243/32
+PersistentKeepalive = 30
+```
+
+### Получаемый клиентский `.conf` (например, `denis-phone-client.conf`)
+
+```ini
+[Interface]
+PrivateKey = gI6EdUSYvn8ugXOt8QQD6Yc+JyiZxIhp3GInSWRfWGE=
+Address = 192.168.254.242/32
+Jc = 7
+Jmin = 384
+Jmax = 980
+S1 = 28
+S2 = 112
+S3 = 14
+S4 = 6
+H1 = 1294018306
+H2 = 1233432895
+H3 = 1834519855
+H4 = 504847222
+
+[Peer]
+PublicKey = F5Z+uQ31k5HPfgWpHzye/lUTDEk7jBEqn+2Sa/OWDSk=
+Endpoint = vpn.example.com:47500
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 30
+```
+
+## Безопасность
+
+YAML-файл и сгенерированные `.conf` содержат **приватные ключи**. Держите их доступными только для root: `chmod 600`.
+
+## Лицензия
+
+См. файл `LICENSE` в репозитории.

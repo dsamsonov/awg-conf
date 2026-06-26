@@ -11,7 +11,7 @@ import sys
 import subprocess
 import yaml
 
-CONFIG_YAML = "wg-conf-config-awg1.yaml"
+CONFIG_YAML = "wg-conf-config.yaml"
 
 # ---------------------------------------------------------------------------
 # Key / jitter generation
